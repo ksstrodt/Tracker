@@ -7,7 +7,8 @@
 
 import UIKit
 
-class PlaceholderView: UIView {
+// TODO
+final class PlaceholderView: UIView {
     
     private let imageView: UIImageView = {
         let iv = UIImageView()

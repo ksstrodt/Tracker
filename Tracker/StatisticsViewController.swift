@@ -6,7 +6,7 @@
 //
 import UIKit
 
-class StatisticsViewController: UIViewController {
+final class StatisticsViewController: UIViewController {
     
     private lazy var placeholderImageView: UIImageView = {
         let imageView = UIImageView()

@@ -11,6 +11,37 @@ protocol NewHabitViewControllerDelegate: AnyObject {
     func didCreateTracker(_ tracker: Tracker, category: String)
 }
 
+extension UIColor {
+    static let customRed = UIColor(red: 245/255, green: 107/255, blue: 108/255, alpha: 1)
+    static let trackerGreen = UIColor(red: 51/255, green: 207/255, blue: 105/255, alpha: 1)
+    static let lightGrayBackground = UIColor(red: 230/255, green: 235/255, blue: 235/255, alpha: 0.3)
+    static let separatorGray = UIColor(red: 230/255, green: 235/255, blue: 235/255, alpha: 1)
+    static let subtitleGray = UIColor(red: 174/255, green: 175/255, blue: 180/255, alpha: 1)
+    static let textPrimary = UIColor(red: 26/255, green: 27/255, blue: 34/255, alpha: 1)
+}
+
+// MARK: - UITextFieldDelegate
+
+extension NewHabitViewController: UITextFieldDelegate {
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        let hasText = !(textField.text?.isEmpty ?? true)
+        textField.rightViewMode = hasText ? .whileEditing : .never
+    }
+    
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        guard let currentText = textField.text else { return true }
+        let newText = (currentText as NSString).replacingCharacters(in: range, with: string)
+        
+        if newText.count > 38 {
+            errorLabel.isHidden = false
+        } else {
+            errorLabel.isHidden = true
+        }
+        
+        return newText.count <= 38
+    }
+}
+
 class NewHabitViewController: UIViewController {
     
     // MARK: - Properties
@@ -18,21 +49,19 @@ class NewHabitViewController: UIViewController {
     weak var delegate: NewHabitViewControllerDelegate?
     
     private var selectedSchedule: [WeekDay] = []
-    private var selectedCategory: String = "Привычки"
+    private var selectedCategory: String = ""
     
-    // Контейнер для поля ввода названия
     private lazy var nameContainerView: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemGray6
+        view.backgroundColor = .lightGrayBackground
         view.layer.cornerRadius = 16
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
     
-    // Контейнер для кнопок категории и расписания
     private lazy var buttonsContainerView: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemGray6
+        view.backgroundColor = .lightGrayBackground
         view.layer.cornerRadius = 16
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
@@ -45,11 +74,13 @@ class NewHabitViewController: UIViewController {
         textField.backgroundColor = .clear
         textField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 16, height: 0))
         textField.leftViewMode = .always
-        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.clearButtonMode = .whileEditing  // Встроенная кнопка "x"
+        textField.delegate = self
         textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
+        textField.translatesAutoresizingMaskIntoConstraints = false
         return textField
     }()
-    
+
     private lazy var categoryButton: UIButton = {
         let button = UIButton(type: .system)
         button.backgroundColor = .clear
@@ -68,7 +99,7 @@ class NewHabitViewController: UIViewController {
     
     private lazy var separatorLine: UIView = {
         let view = UIView()
-        view.backgroundColor = .systemGray4
+        view.backgroundColor = .separatorGray
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -76,9 +107,11 @@ class NewHabitViewController: UIViewController {
     private lazy var cancelButton: UIButton = {
         let button = UIButton(type: .system)
         button.setTitle("Отменить", for: .normal)
-        button.setTitleColor(.systemRed, for: .normal)
-        button.backgroundColor = .systemGray6
+        button.setTitleColor(.customRed, for: .normal)
+        button.backgroundColor = .white
         button.layer.cornerRadius = 16
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.customRed.cgColor
         button.addTarget(self, action: #selector(cancelButtonTapped), for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
@@ -109,15 +142,29 @@ class NewHabitViewController: UIViewController {
     // MARK: - Setup
     
     private func setupUI() {
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .white
         title = "Новая привычка"
         navigationController?.navigationBar.prefersLargeTitles = false
         
-        // Добавляем контейнер для поля ввода
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = .white
+        appearance.shadowColor = .clear
+        appearance.shadowImage = UIImage()
+        appearance.titleTextAttributes = [
+            .foregroundColor: UIColor.textPrimary,
+            .font: UIFont.systemFont(ofSize: 18, weight: .medium)
+        ]
+        
+        navigationController?.navigationBar.standardAppearance = appearance
+        navigationController?.navigationBar.scrollEdgeAppearance = appearance
+        navigationController?.navigationBar.compactAppearance = appearance
+        
         view.addSubview(nameContainerView)
         nameContainerView.addSubview(nameTextField)
         
-        // Добавляем контейнер для кнопок
+        view.addSubview(errorLabel)
+        
         view.addSubview(buttonsContainerView)
         buttonsContainerView.addSubview(categoryButton)
         buttonsContainerView.addSubview(separatorLine)
@@ -130,12 +177,10 @@ class NewHabitViewController: UIViewController {
         buttonStackView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(buttonStackView)
         
-        // Добавляем стрелки к кнопкам
         addDisclosureIndicator(to: categoryButton)
         addDisclosureIndicator(to: scheduleButton)
         
         NSLayoutConstraint.activate([
-            // Контейнер для поля ввода
             nameContainerView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
             nameContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             nameContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
@@ -146,8 +191,10 @@ class NewHabitViewController: UIViewController {
             nameTextField.trailingAnchor.constraint(equalTo: nameContainerView.trailingAnchor),
             nameTextField.bottomAnchor.constraint(equalTo: nameContainerView.bottomAnchor),
             
-            // Контейнер для кнопок (расстояние 24px от предыдущего контейнера)
-            buttonsContainerView.topAnchor.constraint(equalTo: nameContainerView.bottomAnchor, constant: 24),
+            errorLabel.topAnchor.constraint(equalTo: nameContainerView.bottomAnchor, constant: 8),
+            errorLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
+            buttonsContainerView.topAnchor.constraint(equalTo: errorLabel.bottomAnchor, constant: 16),
             buttonsContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             buttonsContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             
@@ -167,7 +214,6 @@ class NewHabitViewController: UIViewController {
             scheduleButton.heightAnchor.constraint(equalToConstant: 75),
             scheduleButton.bottomAnchor.constraint(equalTo: buttonsContainerView.bottomAnchor),
             
-            // Кнопки внизу
             buttonStackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             buttonStackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             buttonStackView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16),
@@ -179,7 +225,7 @@ class NewHabitViewController: UIViewController {
     
     private func addDisclosureIndicator(to button: UIButton) {
         let imageView = UIImageView(image: UIImage(systemName: "chevron.right"))
-        imageView.tintColor = .systemGray3
+        imageView.tintColor = UIColor(red: 200/255, green: 200/255, blue: 200/255, alpha: 1)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(imageView)
         
@@ -195,7 +241,7 @@ class NewHabitViewController: UIViewController {
         if selectedSchedule.count == 7 {
             return "Каждый день"
         } else if selectedSchedule.isEmpty {
-            return "Не выбрано"
+            return ""
         } else {
             let shortNames: [WeekDay: String] = [
                 .monday: "Пн", .tuesday: "Вт", .wednesday: "Ср",
@@ -209,11 +255,13 @@ class NewHabitViewController: UIViewController {
     private func updateCreateButtonState() {
         let isNameValid = !(nameTextField.text?.isEmpty ?? true)
         let isScheduleSelected = !selectedSchedule.isEmpty
+        let isCategoryValid = !selectedCategory.isEmpty
         
-        let isValid = isNameValid && isScheduleSelected
+        let isValid = isNameValid && isScheduleSelected && isCategoryValid
         
         createButton.isEnabled = isValid
-        createButton.backgroundColor = isValid ? .systemBlue : .systemGray
+        createButton.backgroundColor = isValid ? .black : .systemGray
+        createButton.setTitleColor(.white, for: .normal)
     }
     
     private func setupKeyboardHandling() {
@@ -226,22 +274,36 @@ class NewHabitViewController: UIViewController {
     }
     
     @objc private func textFieldDidChange() {
+        let currentText = nameTextField.text ?? ""
+        
+        if currentText.count > 38 {
+            nameTextField.text = String(currentText.prefix(38))
+            errorLabel.isHidden = false
+        } else {
+            errorLabel.isHidden = true
+        }
+        
+        nameTextField.rightViewMode = currentText.isEmpty ? .never : .whileEditing
+        
         updateCreateButtonState()
     }
     
     @objc private func categoryButtonTapped() {
         let alert = UIAlertController(title: "Категория", message: "Выберите категорию", preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Привычки", style: .default) { [weak self] _ in
-            self?.selectedCategory = "Привычки"
+        alert.addAction(UIAlertAction(title: "Важное", style: .default) { [weak self] _ in
+            self?.selectedCategory = "Важное"
             self?.updateCategoryButton()
+            self?.updateCreateButtonState()
         })
         alert.addAction(UIAlertAction(title: "Спорт", style: .default) { [weak self] _ in
             self?.selectedCategory = "Спорт"
             self?.updateCategoryButton()
+            self?.updateCreateButtonState()
         })
         alert.addAction(UIAlertAction(title: "Образование", style: .default) { [weak self] _ in
             self?.selectedCategory = "Образование"
             self?.updateCategoryButton()
+            self?.updateCreateButtonState()
         })
         alert.addAction(UIAlertAction(title: "Отмена", style: .cancel))
         present(alert, animated: true)
@@ -255,7 +317,7 @@ class NewHabitViewController: UIViewController {
     }
     
     private func updateCategoryButton() {
-        // Удаляем старые лейблы
+        
         categoryButton.subviews.forEach {
             if $0 is UILabel {
                 $0.removeFromSuperview()
@@ -264,30 +326,38 @@ class NewHabitViewController: UIViewController {
         
         let titleLabel = UILabel()
         titleLabel.text = "Категория"
-        titleLabel.font = .systemFont(ofSize: 17)
-        titleLabel.textColor = .label
+        titleLabel.font = .systemFont(ofSize: 17, weight: .regular)
+        titleLabel.textColor = .textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = selectedCategory
-        subtitleLabel.font = .systemFont(ofSize: 17)
-        subtitleLabel.textColor = .gray
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        
         categoryButton.addSubview(titleLabel)
-        categoryButton.addSubview(subtitleLabel)
         
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: categoryButton.leadingAnchor, constant: 16),
-            titleLabel.topAnchor.constraint(equalTo: categoryButton.topAnchor, constant: 15),
+        if !selectedCategory.isEmpty {
+            let subtitleLabel = UILabel()
+            subtitleLabel.text = selectedCategory
+            subtitleLabel.font = .systemFont(ofSize: 17, weight: .regular)
+            subtitleLabel.textColor = .subtitleGray
+            subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
             
-            subtitleLabel.leadingAnchor.constraint(equalTo: categoryButton.leadingAnchor, constant: 16),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
-        ])
+            categoryButton.addSubview(subtitleLabel)
+            
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: categoryButton.leadingAnchor, constant: 16),
+                titleLabel.topAnchor.constraint(equalTo: categoryButton.topAnchor, constant: 15),
+                
+                subtitleLabel.leadingAnchor.constraint(equalTo: categoryButton.leadingAnchor, constant: 16),
+                subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: categoryButton.leadingAnchor, constant: 16),
+                titleLabel.centerYAnchor.constraint(equalTo: categoryButton.centerYAnchor)
+            ])
+        }
     }
     
     private func updateScheduleButton() {
-        // Удаляем старые лейблы
+
         scheduleButton.subviews.forEach {
             if $0 is UILabel {
                 $0.removeFromSuperview()
@@ -296,29 +366,47 @@ class NewHabitViewController: UIViewController {
         
         let titleLabel = UILabel()
         titleLabel.text = "Расписание"
-        titleLabel.font = .systemFont(ofSize: 17)
-        titleLabel.textColor = .label
+        titleLabel.font = .systemFont(ofSize: 17, weight: .regular)
+        titleLabel.textColor = .textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = getScheduleText()
-        subtitleLabel.font = .systemFont(ofSize: 17)
-        subtitleLabel.textColor = .gray
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        
         scheduleButton.addSubview(titleLabel)
-        scheduleButton.addSubview(subtitleLabel)
         
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: scheduleButton.leadingAnchor, constant: 16),
-            titleLabel.topAnchor.constraint(equalTo: scheduleButton.topAnchor, constant: 15),
+        if !selectedSchedule.isEmpty {
+            let subtitleLabel = UILabel()
+            subtitleLabel.text = getScheduleText()
+            subtitleLabel.font = .systemFont(ofSize: 17, weight: .regular)
+            subtitleLabel.textColor = .subtitleGray
+            subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
             
-            subtitleLabel.leadingAnchor.constraint(equalTo: scheduleButton.leadingAnchor, constant: 16),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
-        ])
+            scheduleButton.addSubview(subtitleLabel)
+            
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: scheduleButton.leadingAnchor, constant: 16),
+                titleLabel.topAnchor.constraint(equalTo: scheduleButton.topAnchor, constant: 15),
+                
+                subtitleLabel.leadingAnchor.constraint(equalTo: scheduleButton.leadingAnchor, constant: 16),
+                subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: scheduleButton.leadingAnchor, constant: 16),
+                titleLabel.centerYAnchor.constraint(equalTo: scheduleButton.centerYAnchor)
+            ])
+        }
         
         updateCreateButtonState()
     }
+    
+    private lazy var errorLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Ограничение 38 символов"
+        label.font = .systemFont(ofSize: 17, weight: .regular)
+        label.textColor = UIColor(red: 245/255, green: 107/255, blue: 108/255, alpha: 1) // #F56B6C
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
     
     @objc private func cancelButtonTapped() {
         dismiss(animated: true)
@@ -326,11 +414,11 @@ class NewHabitViewController: UIViewController {
     
     @objc private func createButtonTapped() {
         guard let name = nameTextField.text, !name.isEmpty,
-              !selectedSchedule.isEmpty else { return }
+              !selectedSchedule.isEmpty,
+              !selectedCategory.isEmpty else { return }
         
-        // Временные значения для emoji и цвета (пока нет выбора)
-        let defaultEmoji = "📌"
-        let defaultColor = UIColor.systemBlue
+        let defaultEmoji = "😪"
+        let defaultColor = UIColor.trackerGreen
         
         let tracker = Tracker(
             id: UUID(),
@@ -345,12 +433,14 @@ class NewHabitViewController: UIViewController {
     }
 }
 
+
 // MARK: - ScheduleViewControllerDelegate
 
 extension NewHabitViewController: ScheduleViewControllerDelegate {
     func didSelectDays(_ days: [WeekDay]) {
         selectedSchedule = days
         updateScheduleButton()
+        updateCreateButtonState()
     }
 }
 
@@ -378,9 +468,8 @@ class ScheduleViewController: UIViewController {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .singleLine
-        // Разделитель с отступами слева 16 и справа 16
         tableView.separatorInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
-        tableView.separatorColor = UIColor(red: 230/255, green: 235/255, blue: 235/255, alpha: 1)
+        tableView.separatorColor = UIColor(red: 200/255, green: 205/255, blue: 210/255, alpha: 1)
         return tableView
     }()
     
@@ -405,13 +494,12 @@ class ScheduleViewController: UIViewController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Скрываем кнопку "Назад"
+
         navigationItem.hidesBackButton = true
         navigationController?.navigationBar.isHidden = false
         navigationController?.navigationBar.prefersLargeTitles = false
         title = "Расписание"
         
-        // Убираем нижнюю границу (тень) под navigation bar
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = .white
@@ -431,7 +519,6 @@ class ScheduleViewController: UIViewController {
     
     // MARK: - Setup
     private func setupNavigationBar() {
-        // Убираем кнопку "Назад" на всякий случай
         navigationItem.setHidesBackButton(true, animated: false)
         navigationItem.leftBarButtonItem = nil
         navigationItem.leftBarButtonItems = nil
@@ -462,6 +549,7 @@ class ScheduleViewController: UIViewController {
         navigationController?.popViewController(animated: true)
     }
 }
+
 
 // MARK: - UITableViewDelegate, UITableViewDataSource
 extension ScheduleViewController: UITableViewDelegate, UITableViewDataSource {

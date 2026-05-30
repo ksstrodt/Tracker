@@ -82,7 +82,6 @@ class CategoryHeaderView: UICollectionReusableView {
         addSubview(titleLabel)
         
         NSLayoutConstraint.activate([
-            // Отступ от левого края 28px
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
             titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -198)
@@ -174,8 +173,14 @@ class TrackersViewController: UIViewController {
     private lazy var customFooter: UIView = {
         let view = UIView()
         view.backgroundColor = .systemBackground
-        view.layer.borderWidth = 0.5
-        view.layer.borderColor = UIColor.systemGray4.cgColor
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    // Добавляем верхнюю разделительную линию
+    private lazy var topSeparatorLine: UIView = {
+        let view = UIView()
+        view.backgroundColor = UIColor.systemGray4
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -272,7 +277,7 @@ class TrackersViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground  // Или .white, если нужен чисто белый
+        view.backgroundColor = .systemBackground
         setupNavigationBar()
         setupUI()
         updatePlaceholderVisibility()
@@ -283,7 +288,6 @@ class TrackersViewController: UIViewController {
     private func setupNavigationBar() {
         title = "Трекеры"
         
-        // Создаем прозрачный фон для navigation bar
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
         appearance.backgroundColor = .clear
@@ -301,6 +305,7 @@ class TrackersViewController: UIViewController {
             target: self,
             action: #selector(addButtonTapped)
         )
+        addButton.tintColor = .black
         navigationItem.leftBarButtonItem = addButton
         
         let dateBarButton = UIBarButtonItem(customView: datePicker)
@@ -315,6 +320,7 @@ class TrackersViewController: UIViewController {
         view.addSubview(placeholderStackView)
         view.addSubview(statisticsPlaceholderStackView)
         view.addSubview(customFooter)
+        view.addSubview(topSeparatorLine)  // Добавляем линию
         
         customFooter.addSubview(buttonStackView)
         buttonStackView.addArrangedSubview(trackersButton)
@@ -340,6 +346,11 @@ class TrackersViewController: UIViewController {
             statisticsPlaceholderStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -20),
             statisticsPlaceholderImageView.widthAnchor.constraint(equalToConstant: 80),
             statisticsPlaceholderImageView.heightAnchor.constraint(equalToConstant: 80),
+            
+            topSeparatorLine.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topSeparatorLine.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topSeparatorLine.bottomAnchor.constraint(equalTo: customFooter.topAnchor),
+            topSeparatorLine.heightAnchor.constraint(equalToConstant: 0.5),
             
             customFooter.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             customFooter.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -458,9 +469,17 @@ class TrackersViewController: UIViewController {
     }
     
     @objc private func completeButtonTapped(sender: UIButton) {
-        let filteredTrackers = getFilteredTrackers()
-        guard sender.tag < filteredTrackers.count else { return }
-        let tracker = filteredTrackers[sender.tag]
+        guard let trackerId = sender.trackerId else { return }
+        
+        var foundTracker: Tracker?
+        for category in categories {
+            if let tracker = category.trackers.first(where: { $0.id == trackerId }) {
+                foundTracker = tracker
+                break
+            }
+        }
+        
+        guard let tracker = foundTracker else { return }
         
         guard canCompleteTracker(on: selectedDate) else {
             return
@@ -524,7 +543,8 @@ extension TrackersViewController: UICollectionViewDataSource {
         let canComplete = canCompleteTracker(on: selectedDate)
         
         cell.configure(with: tracker, isCompleted: isCompleted, completionCount: count, canComplete: canComplete)
-        cell.completeButton.tag = indexPath.item
+        
+        cell.completeButton.trackerId = tracker.id
         cell.completeButton.removeTarget(nil, action: nil, for: .allEvents)
         cell.completeButton.addTarget(self, action: #selector(completeButtonTapped(sender:)), for: .touchUpInside)
         
@@ -573,8 +593,6 @@ extension TrackersViewController: UICollectionViewDelegateFlowLayout {
     }
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> CGSize {
-        // Высота header: 266 от верхнего + 588 от нижнего = 854? Оставим стандартную высоту
-        // Высота 46px для заголовка
         return CGSize(width: collectionView.bounds.width, height: 46)
     }
 }
@@ -610,7 +628,7 @@ class TrackerCell: UICollectionViewCell {
         let button = UIButton(type: .system)
         button.setTitle("+", for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
-        button.backgroundColor = .systemBlue
+        button.backgroundColor = UIColor(red: 51/255, green: 207/255, blue: 105/255, alpha: 1)  // #33CF69
         button.tintColor = .white
         button.layer.cornerRadius = 17
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -626,7 +644,7 @@ class TrackerCell: UICollectionViewCell {
     
     private let emojiLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 24)
+        label.font = .systemFont(ofSize: 16)
         label.textAlignment = .center
         label.backgroundColor = UIColor.white.withAlphaComponent(0.3)
         label.layer.cornerRadius = 12
@@ -671,29 +689,25 @@ class TrackerCell: UICollectionViewCell {
         cardView.addSubview(nameLabel)
         
         NSLayoutConstraint.activate([
-            // Карточка
+           
             cardView.topAnchor.constraint(equalTo: contentView.topAnchor),
             cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             cardView.heightAnchor.constraint(equalToConstant: 90),
             
-            // Emoji внутри карточки
             emojiLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 12),
             emojiLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
             emojiLabel.widthAnchor.constraint(equalToConstant: 24),
             emojiLabel.heightAnchor.constraint(equalToConstant: 24),
             
-            // Название внутри карточки
             nameLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 12),
             nameLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
             nameLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -12),
             
-            // Счетчик дней - под карточкой, слева
-            daysLabel.topAnchor.constraint(equalTo: cardView.bottomAnchor, constant: 12),
+            daysLabel.centerYAnchor.constraint(equalTo: completeButton.centerYAnchor),
             daysLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             daysLabel.trailingAnchor.constraint(lessThanOrEqualTo: completeButton.leadingAnchor, constant: -8),
             
-            // Кнопка "+" - под карточкой, справа, с четким отступом от карточки
             completeButton.topAnchor.constraint(equalTo: cardView.bottomAnchor, constant: 8),
             completeButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
             completeButton.widthAnchor.constraint(equalToConstant: 34),
@@ -724,6 +738,20 @@ class TrackerCell: UICollectionViewCell {
             completeButton.isEnabled = true
             completeButton.setTitle("+", for: .normal)
             completeButton.backgroundColor = tracker.color
+        }
+    }
+}
+
+
+extension UIButton {
+    private static var trackerIdKey: UInt8 = 0
+    
+    var trackerId: UUID? {
+        get {
+            return objc_getAssociatedObject(self, &UIButton.trackerIdKey) as? UUID
+        }
+        set {
+            objc_setAssociatedObject(self, &UIButton.trackerIdKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         }
     }
 }
