@@ -35,5 +35,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        PersistentContainer.shared.saveContext()
     }
 }
