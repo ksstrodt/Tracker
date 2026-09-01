@@ -6,55 +6,6 @@
 //
 import UIKit
 
-// MARK: - Models
-
-struct Tracker {
-    let id: UUID
-    let name: String
-    let emoji: String
-    let color: UIColor
-    let schedule: [WeekDay]
-}
-
-enum WeekDay: String, CaseIterable {
-    case monday = "Пн"
-    case tuesday = "Вт"
-    case wednesday = "Ср"
-    case thursday = "Чт"
-    case friday = "Пт"
-    case saturday = "Сб"
-    case sunday = "Вс"
-    
-    static var allDays: [WeekDay] {
-        return [.monday, .tuesday, .wednesday, .thursday, .friday, .saturday, .sunday]
-    }
-    
-    static func from(date: Date) -> WeekDay? {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: date)
-        switch weekday {
-        case 1: return .sunday
-        case 2: return .monday
-        case 3: return .tuesday
-        case 4: return .wednesday
-        case 5: return .thursday
-        case 6: return .friday
-        case 7: return .saturday
-        default: return nil
-        }
-    }
-}
-
-struct TrackerCategory {
-    let title: String
-    let trackers: [Tracker]
-}
-
-struct TrackerRecord {
-    let trackerId: UUID
-    let date: Date
-}
-
 // MARK: - CategoryHeaderView
 
 class CategoryHeaderView: UICollectionReusableView {
@@ -99,14 +50,11 @@ class TrackersViewController: UIViewController {
     
     // MARK: - Properties
     
+    private let dataStoreManager = DataStoreManager.shared
     private var categories: [TrackerCategory] = []
     private var completedTrackers: [TrackerRecord] = []
     private var selectedDate = Date()
     private var isTrackersSelected = true
-    
-    private func completionCount(for trackerId: UUID) -> Int {
-        return completedTrackers.filter { $0.trackerId == trackerId }.count
-    }
     
     private lazy var datePicker: UIDatePicker = {
         let picker = UIDatePicker()
@@ -177,7 +125,6 @@ class TrackersViewController: UIViewController {
         return view
     }()
 
-    // Добавляем верхнюю разделительную линию
     private lazy var topSeparatorLine: UIView = {
         let view = UIView()
         view.backgroundColor = UIColor.systemGray4
@@ -280,7 +227,44 @@ class TrackersViewController: UIViewController {
         view.backgroundColor = .systemBackground
         setupNavigationBar()
         setupUI()
+        
+        // Подписываемся на уведомления об изменениях в DataStore
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDataStoreChange),
+            name: .dataStoreDidChange,
+            object: nil
+        )
+        
+        loadData()
         updatePlaceholderVisibility()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        loadData()
+        updatePlaceholderVisibility()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: - Data Loading
+    
+    private func loadData() {
+        let categoryData = dataStoreManager.categoryStore.fetchCategoriesWithTrackers()
+        categories = categoryData.map { categoryData in
+            let trackers = categoryData.trackers.compactMap { $0.toTracker() }
+            return TrackerCategory(title: categoryData.category.title ?? "Без категории", trackers: trackers)
+        }
+        
+        let records = dataStoreManager.recordStore.fetchRecords()
+        completedTrackers = records.compactMap { $0.toTrackerRecord() }
+        
+        print("📊 Загружено категорий: \(categories.count)")
+        print("📊 Загружено трекеров: \(categories.flatMap { $0.trackers }.count)")
+        print("📊 Загружено записей: \(completedTrackers.count)")
     }
     
     // MARK: - Setup
@@ -320,7 +304,7 @@ class TrackersViewController: UIViewController {
         view.addSubview(placeholderStackView)
         view.addSubview(statisticsPlaceholderStackView)
         view.addSubview(customFooter)
-        view.addSubview(topSeparatorLine)  // Добавляем линию
+        view.addSubview(topSeparatorLine)
         
         customFooter.addSubview(buttonStackView)
         buttonStackView.addArrangedSubview(trackersButton)
@@ -362,6 +346,15 @@ class TrackersViewController: UIViewController {
             buttonStackView.trailingAnchor.constraint(equalTo: customFooter.trailingAnchor),
             buttonStackView.bottomAnchor.constraint(equalTo: customFooter.safeAreaLayoutGuide.bottomAnchor)
         ])
+    }
+    
+    // MARK: - Update Methods
+    
+    @objc private func handleDataStoreChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.loadData()
+            self?.updatePlaceholderVisibility()
+        }
     }
     
     private func updatePlaceholderVisibility() {
@@ -413,10 +406,7 @@ class TrackersViewController: UIViewController {
     }
     
     private func isTrackerCompleted(trackerId: UUID, on date: Date) -> Bool {
-        let calendar = Calendar.current
-        return completedTrackers.contains { record in
-            record.trackerId == trackerId && calendar.isDate(record.date, inSameDayAs: date)
-        }
+        return dataStoreManager.recordStore.isTrackerCompleted(trackerId: trackerId, on: date)
     }
     
     private func canCompleteTracker(on date: Date) -> Bool {
@@ -424,6 +414,10 @@ class TrackersViewController: UIViewController {
         let today = calendar.startOfDay(for: Date())
         let selectedDay = calendar.startOfDay(for: date)
         return selectedDay <= today
+    }
+    
+    private func completionCount(for trackerId: UUID) -> Int {
+        return dataStoreManager.recordStore.countRecords(for: trackerId)
     }
     
     // MARK: - Actions
@@ -471,27 +465,20 @@ class TrackersViewController: UIViewController {
     @objc private func completeButtonTapped(sender: UIButton) {
         guard let trackerId = sender.trackerId else { return }
         
-        var foundTracker: Tracker?
-        for category in categories {
-            if let tracker = category.trackers.first(where: { $0.id == trackerId }) {
-                foundTracker = tracker
-                break
-            }
-        }
-        
-        guard let tracker = foundTracker else { return }
-        
         guard canCompleteTracker(on: selectedDate) else {
             return
         }
         
-        if isTrackerCompleted(trackerId: tracker.id, on: selectedDate) {
+        if dataStoreManager.recordStore.isTrackerCompleted(trackerId: trackerId, on: selectedDate) {
+            dataStoreManager.recordStore.deleteRecord(trackerId: trackerId, date: selectedDate)
             completedTrackers.removeAll {
-                $0.trackerId == tracker.id && Calendar.current.isDate($0.date, inSameDayAs: selectedDate)
+                $0.trackerId == trackerId && Calendar.current.isDate($0.date, inSameDayAs: selectedDate)
             }
         } else {
-            let record = TrackerRecord(trackerId: tracker.id, date: selectedDate)
-            completedTrackers.append(record)
+            if let _ = dataStoreManager.recordStore.createRecord(trackerId: trackerId, date: selectedDate) {
+                let record = TrackerRecord(trackerId: trackerId, date: selectedDate)
+                completedTrackers.append(record)
+            }
         }
         
         collectionView.reloadData()
@@ -575,7 +562,7 @@ extension TrackersViewController: UICollectionViewDelegateFlowLayout {
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let width: CGFloat = 167
-        let height: CGFloat = 140 // Увеличена высота для разделения
+        let height: CGFloat = 140
         
         return CGSize(width: width, height: height)
     }
@@ -601,22 +588,42 @@ extension TrackersViewController: UICollectionViewDelegateFlowLayout {
 
 extension TrackersViewController: NewHabitViewControllerDelegate {
     func didCreateTracker(_ tracker: Tracker, category: String) {
-        if let existingIndex = categories.firstIndex(where: { $0.title == category }) {
-            let existingCategory = categories[existingIndex]
+        print("🔵 didCreateTracker вызван: \(tracker.name), категория: \(category)")
+        
+        let colorHex = tracker.color.toHexString()
+        let scheduleDays = tracker.schedule.map { String(WeekDay.allDays.firstIndex(of: $0) ?? 0) }.joined(separator: ",")
+        
+        var categoryEntity = dataStoreManager.categoryStore.fetchCategory(by: category)
+        
+        if categoryEntity == nil {
+            categoryEntity = dataStoreManager.categoryStore.createCategory(title: category)
+        }
+        
+        guard let categoryEntity = categoryEntity else { return }
+        
+        let _ = dataStoreManager.trackerStore.createTracker(
+            name: tracker.name,
+            emoji: tracker.emoji,
+            colorHex: colorHex,
+            scheduleDays: scheduleDays,
+            category: categoryEntity
+        )
+        
+        if let existingIndex = self.categories.firstIndex(where: { $0.title == category }) {
+            let existingCategory = self.categories[existingIndex]
             let updatedTrackers = existingCategory.trackers + [tracker]
             let updatedCategory = TrackerCategory(title: category, trackers: updatedTrackers)
-            var updatedCategories = categories
+            var updatedCategories = self.categories
             updatedCategories[existingIndex] = updatedCategory
-            categories = updatedCategories
+            self.categories = updatedCategories
         } else {
             let newCategory = TrackerCategory(title: category, trackers: [tracker])
-            categories.append(newCategory)
+            self.categories.append(newCategory)
         }
         
         updatePlaceholderVisibility()
     }
 }
-
 
 // MARK: - TrackerCell
 
@@ -628,7 +635,7 @@ class TrackerCell: UICollectionViewCell {
         let button = UIButton(type: .system)
         button.setTitle("+", for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
-        button.backgroundColor = UIColor(red: 51/255, green: 207/255, blue: 105/255, alpha: 1)  // #33CF69
+        button.backgroundColor = UIColor(red: 51/255, green: 207/255, blue: 105/255, alpha: 1)
         button.tintColor = .white
         button.layer.cornerRadius = 17
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -689,7 +696,6 @@ class TrackerCell: UICollectionViewCell {
         cardView.addSubview(nameLabel)
         
         NSLayoutConstraint.activate([
-           
             cardView.topAnchor.constraint(equalTo: contentView.topAnchor),
             cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -741,7 +747,6 @@ class TrackerCell: UICollectionViewCell {
         }
     }
 }
-
 
 extension UIButton {
     private static var trackerIdKey: UInt8 = 0
